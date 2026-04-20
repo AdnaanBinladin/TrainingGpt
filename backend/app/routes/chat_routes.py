@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
 
 from app.models.schemas import ChatRequest, ChatResponse
-from app.services.embedding_service import embed_query
+from app.services.embedding_service import EmbeddingServiceError, embed_query
 from app.services.llm_service import generate_answer
 from app.services.milvus_service import search_vectors
 from app.services.query_rewrite_service import rewrite_query
@@ -33,7 +33,10 @@ def chat():
         return jsonify({"detail": str(exc)}), 404
 
     rewritten_query = rewrite_query(chat_request.query)
-    query_embedding = embed_query(rewritten_query)
+    try:
+        query_embedding = embed_query(rewritten_query)
+    except EmbeddingServiceError as exc:
+        return jsonify({"detail": str(exc)}), 503
 
     raw_results = search_vectors(
         collection_name=team_config.collection_name,

@@ -1,6 +1,14 @@
+import uuid
 from typing import Any
 
-from pymilvus import Collection, connections, utility
+from pymilvus import (
+    Collection,
+    CollectionSchema,
+    DataType,
+    FieldSchema,
+    connections,
+    utility,
+)
 
 from app.services.local_vector_store_service import add_documents, search_documents
 from app.utils.config import settings
@@ -15,18 +23,11 @@ def search_vectors(
     top_k: int = 5,
 ) -> list[dict[str, Any]]:
     """
-    Search a team-specific Milvus collection.
-
-    The collection name is supplied by team routing, which lets each team keep
-    isolated data today and enables tenant-aware routing later.
+    Search a team-specific Milvus collection, falling back to local storage on failure.
     """
     try:
         _connect()
-
-        if not utility.has_collection(collection_name):
-            return search_documents(collection_name, embedding, top_k)
-
-        collection = Collection(collection_name)
+        collection = _ensure_collection(collection_name)
         collection.load()
 
         search_results = collection.search(
@@ -40,7 +41,6 @@ def search_vectors(
         results = [_hit_to_dict(hit) for hit in search_results[0]]
         if results:
             return results
-
         return search_documents(collection_name, embedding, top_k)
     except Exception as exc:
         local_results = search_documents(collection_name, embedding, top_k)
@@ -62,20 +62,16 @@ def search_vectors(
 
 def insert_vectors(collection_name: str, data: list[dict[str, Any]]) -> None:
     """
-    Insert embedded documents into a team-specific Milvus collection.
-
-    This is a placeholder for ingestion workflows. Production code should
-    validate schemas, create collections if needed, and handle batch failures.
+    Insert embedded documents into Milvus and fall back to local storage if unavailable.
     """
+    if not data:
+        return
+
     try:
         _connect()
-
-        if not utility.has_collection(collection_name):
-            add_documents(collection_name, data)
-            return
-
-        collection = Collection(collection_name)
-        collection.insert(data)
+        collection = _ensure_collection(collection_name)
+        insert_payload = _prepare_insert_payload(data)
+        collection.insert(insert_payload)
         collection.flush()
     except Exception:
         add_documents(collection_name, data)
@@ -94,6 +90,68 @@ def _connect() -> None:
         port=str(settings.milvus_port),
     )
     _IS_CONNECTED = True
+
+
+def _ensure_collection(collection_name: str) -> Collection:
+    if utility.has_collection(collection_name):
+        return Collection(collection_name)
+
+    schema = CollectionSchema(
+        fields=[
+            FieldSchema(name="id", dtype=DataType.VARCHAR, is_primary=True, max_length=64),
+            FieldSchema(name=settings.milvus_text_field, dtype=DataType.VARCHAR, max_length=8192),
+            FieldSchema(
+                name=settings.milvus_vector_field,
+                dtype=DataType.FLOAT_VECTOR,
+                dim=settings.embedding_dimension,
+            ),
+            FieldSchema(name="source", dtype=DataType.VARCHAR, max_length=1024),
+            FieldSchema(name="metadata", dtype=DataType.JSON),
+        ],
+        description="Team-scoped RAG document chunks",
+        enable_dynamic_field=False,
+    )
+
+    collection = Collection(name=collection_name, schema=schema)
+    collection.create_index(
+        field_name=settings.milvus_vector_field,
+        index_params={
+            "index_type": "IVF_FLAT",
+            "metric_type": "COSINE",
+            "params": {"nlist": 128},
+        },
+    )
+    collection.load()
+    return collection
+
+
+def _prepare_insert_payload(documents: list[dict[str, Any]]) -> list[list[Any]]:
+    ids: list[str] = []
+    texts: list[str] = []
+    vectors: list[list[float]] = []
+    sources: list[str] = []
+    metadatas: list[dict[str, Any]] = []
+
+    for document in documents:
+        text = str(document.get("text", "")).strip()
+        embedding = document.get("embedding", [])
+
+        if not text or not isinstance(embedding, list):
+            continue
+        if len(embedding) != settings.embedding_dimension:
+            continue
+
+        ids.append(str(document.get("id") or uuid.uuid4()))
+        texts.append(text[:8192])
+        vectors.append([float(value) for value in embedding])
+        sources.append(str(document.get("source", ""))[:1024])
+        metadata = document.get("metadata", {})
+        metadatas.append(metadata if isinstance(metadata, dict) else {"value": str(metadata)})
+
+    if not ids:
+        raise ValueError("No valid documents were prepared for Milvus insertion.")
+
+    return [ids, texts, vectors, sources, metadatas]
 
 
 def _hit_to_dict(hit: Any) -> dict[str, Any]:
