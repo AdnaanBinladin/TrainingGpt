@@ -16,10 +16,10 @@ The current design keeps team-specific configuration in `backend/app/teams/<team
 1. User selects a team in the frontend.
 2. Frontend sends `POST /chat` with `{ "team": "cloud", "query": "..." }`.
 3. Backend resolves team configuration through `team_router_service.get_team_config`.
-4. Backend uses shared RAG service placeholders:
+4. Backend uses shared RAG services:
    - query rewriting
-   - embedding generation
-   - Milvus collection search
+   - Ollama embedding generation (`OLLAMA_EMBEDDING_MODEL`)
+   - team-scoped Milvus collection create/search
    - reranking
    - LLM answer generation
 5. Backend returns an answer and lightweight metadata.
@@ -63,13 +63,36 @@ Expected local services:
 - Frontend: `http://localhost:3101`
 - Backend: `http://localhost:8101`
 - Existing Milvus: `localhost:19530`
-- Existing Ollama LLM on VM: `http://192.168.28.100:11434` using `llama3`
+- Existing Ollama LLM: `http://127.0.0.1:11434` using `llama3`
 
 Docker backend note:
 
 - When running inside Docker, the backend uses `host.docker.internal:19530` to reach your existing Milvus container published on the host.
 - When running locally with `python app.py`, the backend uses `localhost:19530` from `backend/.env`.
-- The backend calls Ollama through `OLLAMA_BASE_URL`. For laptop-to-VM testing, set it to the VM address, for example `http://192.168.28.100:11434`.
+- The backend calls Ollama through `OLLAMA_BASE_URL`. In Docker, `host.docker.internal` is used to reach host services.
+- Copy `backend/.env.example` to `backend/.env` and set `OLLAMA_EMBEDDING_MODEL` + `EMBEDDING_DIMENSION` to matching values.
+
+## VM Deployment Mode
+
+When frontend and backend both run on the VM:
+
+- Backend should use local services:
+  - `MILVUS_HOST=127.0.0.1`
+  - `OLLAMA_BASE_URL=http://127.0.0.1:11434`
+- Frontend now auto-detects the browser host and calls backend on `:8101` when `NEXT_PUBLIC_API_BASE_URL` is not set.
+  - If users open `http://<vm-ip>:3101`, API requests go to `http://<vm-ip>:8101`.
+
+## Upload Pipeline (Production-Oriented)
+
+- Upload endpoint validates:
+  - max file count
+  - max per-file size
+  - max total upload size
+  - supported file types
+- Supported text extraction:
+  - PDF (`pypdf`)
+  - plain text / markdown / json / csv (UTF-8 decode)
+- Extracted text is chunked, embedded using the configured Ollama embedding model, and stored in team-specific Milvus collections.
 
 ## Future-Proofing Notes
 

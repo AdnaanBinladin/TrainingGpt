@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { sendMessage } from "../services/api";
 
-export default function ChatSection() {
+export default function ChatSection({ team }) {
   const [query, setQuery] = useState("");
   const [messages, setMessages] = useState([]);
   const [isSending, setIsSending] = useState(false);
@@ -24,13 +24,13 @@ export default function ChatSection() {
     setIsSending(true);
 
     try {
-      const data = await sendMessage(trimmedQuery);
+      const data = await sendMessage(trimmedQuery, team);
       setMessages((current) => [
         ...current,
         { role: "bot", text: data.answer || data.response || "No response returned" },
       ]);
     } catch (error) {
-      setError("Request failed");
+      setError(error.message || "Request failed");
     } finally {
       setIsSending(false);
     }
@@ -39,6 +39,7 @@ export default function ChatSection() {
   return (
     <section className="box">
       <h2>Chat Section</h2>
+      <p className="status">Team: {team}</p>
 
       <div className="chat-list">
         {messages.map((message, index) => (

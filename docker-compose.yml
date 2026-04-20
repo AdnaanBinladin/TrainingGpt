@@ -7,7 +7,6 @@ services:
       - "3101:3101"
     environment:
       - PORT=3101
-      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8101
     depends_on:
       - backend
 
@@ -22,6 +21,8 @@ services:
       - MILVUS_PORT=19530
       - LOG_LEVEL=INFO
       - BACKEND_PORT=8101
-      - OLLAMA_BASE_URL=http://192.168.28.100:11434
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=llama3
+      - OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+      - EMBEDDING_DIMENSION=768
       - OLLAMA_TIMEOUT_SECONDS=120
