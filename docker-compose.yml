@@ -22,3 +22,6 @@ services:
       - MILVUS_PORT=19530
       - LOG_LEVEL=INFO
       - BACKEND_PORT=8101
+      - OLLAMA_BASE_URL=http://192.168.28.100:11434
+      - OLLAMA_MODEL=llama3
+      - OLLAMA_TIMEOUT_SECONDS=120

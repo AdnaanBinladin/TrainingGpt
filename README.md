@@ -63,11 +63,13 @@ Expected local services:
 - Frontend: `http://localhost:3101`
 - Backend: `http://localhost:8101`
 - Existing Milvus: `localhost:19530`
+- Existing Ollama LLM on VM: `http://192.168.28.100:11434` using `llama3`
 
 Docker backend note:
 
 - When running inside Docker, the backend uses `host.docker.internal:19530` to reach your existing Milvus container published on the host.
 - When running locally with `python app.py`, the backend uses `localhost:19530` from `backend/.env`.
+- The backend calls Ollama through `OLLAMA_BASE_URL`. For laptop-to-VM testing, set it to the VM address, for example `http://192.168.28.100:11434`.
 
 ## Future-Proofing Notes
 
